@@ -1,44 +1,76 @@
-#include "opencv2/highgui/highgui.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <iostream>
 
+using namespace std;
 using namespace cv;
 
-int main( int argc, char** argv )
+
+void Sharpen(const Mat& myImage,Mat& Result);
+
+int main( int argc, char* argv[])
 {
-    // Load the image
-    Mat imgOriginal = imread( "/home/tm/lena.jpg", 1 );
+    const char* filename = argc >=2 ? argv[1] : "lena.jpg";
 
-    //show the original image
-    const char* pzOriginalImage = "Original Image";
-    namedWindow( pzOriginalImage, CV_WINDOW_AUTOSIZE );
-    imshow( pzOriginalImage, imgOriginal );
+    Mat I, J, K;
 
-    const char* pzRotatedImage = "Rotated Image";
-    namedWindow( pzRotatedImage, CV_WINDOW_AUTOSIZE );
+    if (argc >= 3 && !strcmp("G", argv[2]))
+        I = imread( filename, CV_LOAD_IMAGE_GRAYSCALE);
+    else
+        I = imread( filename, CV_LOAD_IMAGE_COLOR);
 
-    int iAngle = 180;
-    createTrackbar("Angle", pzRotatedImage, &iAngle, 360);
+    namedWindow("Input", WINDOW_AUTOSIZE);
+    namedWindow("Output", WINDOW_AUTOSIZE);
 
-    int iImageHieght = imgOriginal.rows / 2;
-    int iImageWidth = imgOriginal.cols / 2;
+    imshow("Input", I);
+    double t = (double)getTickCount();
 
-    while (true)
+    Sharpen(I, J);
+
+    t = ((double)getTickCount() - t)/getTickFrequency();
+    cout << "Hand written function times passed in seconds: " << t << endl;
+
+    imshow("Output", J);
+    waitKey(0);
+
+    Mat kern = (Mat_<char>(3,3) <<  -1, -1,  -1,
+                                       -1,  8, -1,
+                                         -1, -1,  -1);
+    t = (double)getTickCount();
+    filter2D(I, K, I.depth(), kern );
+    t = ((double)getTickCount() - t)/getTickFrequency();
+    cout << "Built-in filter2D time passed in seconds:      " << t << endl;
+
+    imshow("Output", K);
+
+    waitKey(0);
+    return 0;
+}
+void Sharpen(const Mat& myImage,Mat& Result)
+{
+    CV_Assert(myImage.depth() == CV_8U);
+
+    const int nChannels = myImage.channels();
+    Result.create(myImage.size(),myImage.type());
+
+    for(int j = 1 ; j < myImage.rows-1; ++j)
     {
-        Mat matRotation = getRotationMatrix2D( Point(iImageWidth, iImageHieght), (iAngle - 180), 1 );
+        const uchar* previous = myImage.ptr<uchar>(j - 1);
+        const uchar* current  = myImage.ptr<uchar>(j    );
+        const uchar* next     = myImage.ptr<uchar>(j + 1);
 
-        // Rotate the image
-        Mat imgRotated;
-        warpAffine( imgOriginal, imgRotated, matRotation, imgOriginal.size() );
+        uchar* output = Result.ptr<uchar>(j);
 
-        imshow( pzRotatedImage, imgRotated );
-
-        int iRet = waitKey(30);
-        if ( iRet == 27 )
+        for(int i= nChannels;i < nChannels*(myImage.cols-1); ++i)
         {
-            break;
+            *output++ = saturate_cast<uchar>(5*current[i]
+                                             -current[i-nChannels] - current[i+nChannels] - previous[i] - next[i]);
         }
     }
 
-    return 0;
-    waitKey(0);
+    Result.row(0).setTo(Scalar(0));
+    Result.row(Result.rows-1).setTo(Scalar(0));
+    Result.col(0).setTo(Scalar(0));
+    Result.col(Result.cols-1).setTo(Scalar(0));
 }
