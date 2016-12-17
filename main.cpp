@@ -1,76 +1,122 @@
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <iostream>
+#include<iostream>
+#include<opencv2/imgproc/imgproc.hpp>
+#include<opencv2/highgui/highgui.hpp>
 
 using namespace std;
 using namespace cv;
 
-
-void Sharpen(const Mat& myImage,Mat& Result);
-
-int main( int argc, char* argv[])
+int reflect(int M, int x)
 {
-    const char* filename = argc >=2 ? argv[1] : "lena.jpg";
-
-    Mat I, J, K;
-
-    if (argc >= 3 && !strcmp("G", argv[2]))
-        I = imread( filename, CV_LOAD_IMAGE_GRAYSCALE);
-    else
-        I = imread( filename, CV_LOAD_IMAGE_COLOR);
-
-    namedWindow("Input", WINDOW_AUTOSIZE);
-    namedWindow("Output", WINDOW_AUTOSIZE);
-
-    imshow("Input", I);
-    double t = (double)getTickCount();
-
-    Sharpen(I, J);
-
-    t = ((double)getTickCount() - t)/getTickFrequency();
-    cout << "Hand written function times passed in seconds: " << t << endl;
-
-    imshow("Output", J);
-    waitKey(0);
-
-    Mat kern = (Mat_<char>(3,3) <<  -1, -1,  -1,
-                                       -1,  8, -1,
-                                         -1, -1,  -1);
-    t = (double)getTickCount();
-    filter2D(I, K, I.depth(), kern );
-    t = ((double)getTickCount() - t)/getTickFrequency();
-    cout << "Built-in filter2D time passed in seconds:      " << t << endl;
-
-    imshow("Output", K);
-
-    waitKey(0);
-    return 0;
-}
-void Sharpen(const Mat& myImage,Mat& Result)
-{
-    CV_Assert(myImage.depth() == CV_8U);
-
-    const int nChannels = myImage.channels();
-    Result.create(myImage.size(),myImage.type());
-
-    for(int j = 1 ; j < myImage.rows-1; ++j)
+    if(x < 0)
     {
-        const uchar* previous = myImage.ptr<uchar>(j - 1);
-        const uchar* current  = myImage.ptr<uchar>(j    );
-        const uchar* next     = myImage.ptr<uchar>(j + 1);
+        return -x - 1;
+    }
+    if(x >= M)
+    {
+        return 2*M - x - 1;
+    }
+    return x;
+}
 
-        uchar* output = Result.ptr<uchar>(j);
+int circular(int M, int x)
+{
+    if (x<0)
+        return x+M;
+    if(x >= M)
+        return x-M;
+    return x;
+}
 
-        for(int i= nChannels;i < nChannels*(myImage.cols-1); ++i)
-        {
-            *output++ = saturate_cast<uchar>(5*current[i]
-                                             -current[i-nChannels] - current[i+nChannels] - previous[i] - next[i]);
+
+void noBorderProcessing(Mat src, Mat dst, float Kernel[][3])
+{
+
+    float sum;
+    for(int y = 1; y < src.rows - 1; y++){
+        for(int x = 1; x < src.cols - 1; x++){
+            sum = 0.0;
+            for(int k = -1; k <= 1;k++){
+                for(int j = -1; j <=1; j++){
+                    sum = sum + Kernel[j+1][k+1]*src.at<uchar>(y - j, x - k);
+                }
+            }
+            dst.at<uchar>(y,x) = sum;
         }
     }
+}
 
-    Result.row(0).setTo(Scalar(0));
-    Result.row(Result.rows-1).setTo(Scalar(0));
-    Result.col(0).setTo(Scalar(0));
-    Result.col(Result.cols-1).setTo(Scalar(0));
+void refletedIndexing(Mat src, Mat dst, float Kernel[][3])
+{
+    float sum, x1, y1;
+    for(int y = 0; y < src.rows; y++){
+        for(int x = 0; x < src.cols; x++){
+            sum = 0.0;
+            for(int k = -1;k <= 1; k++){
+                for(int j = -1;j <= 1; j++ ){
+                    x1 = reflect(src.cols, x - j);
+                    y1 = reflect(src.rows, y - k);
+                    sum = sum + Kernel[j+1][k+1]*src.at<uchar>(y1,x1);
+                }
+            }
+            dst.at<uchar>(y,x) = sum;
+        }
+    }
+}
+
+void circularIndexing(Mat src, Mat dst, float Kernel[][3])
+{
+    float sum, x1, y1;
+    for(int y = 0; y < src.rows; y++){
+        for(int x = 0; x < src.cols; x++){
+            sum = 0.0;
+            for(int k = -1;k <= 1; k++){
+                for(int j = -1;j <= 1; j++ ){
+                    x1 = circular(src.cols, x - j);
+                    y1 = circular(src.rows, y - k);
+                    sum = sum + Kernel[j+1][k+1]*src.at<uchar>(y1,x1);
+                }
+            }
+            dst.at<uchar>(y,x) = sum;
+        }
+    }
+}
+
+int main()
+{
+
+    Mat src, dst;
+
+
+    /// Load an image
+    src = imread("/home/tm/lena.jpg", CV_LOAD_IMAGE_GRAYSCALE);
+
+    if( !src.data )
+    { return -1; }
+
+
+    float Kernel[3][3] = {
+            {-1, -1, -1},
+            {-1, 8, -1},
+            {-1, -1, -1}
+    };
+
+    dst = src.clone();
+    for(int y = 0; y < src.rows; y++)
+        for(int x = 0; x < src.cols; x++)
+            dst.at<uchar>(y,x) = 0.0;
+
+    circularIndexing(src, dst, Kernel);
+
+
+
+    namedWindow("final");
+    imshow("final", dst);
+
+    namedWindow("initial");
+    imshow("initial", src);
+
+    waitKey();
+
+
+    return 0;
 }
